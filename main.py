@@ -582,3 +582,76 @@ class TimeToExitEngine:
 
     def severity_distribution(self) -> List[int]:
         counts = [0] * (MAX_SEVERITY + 1)
+        for aid in self._advisory_ids:
+            a = self._advisories[aid]
+            if 0 <= a.severity <= MAX_SEVERITY:
+                counts[a.severity] += 1
+        return counts
+
+    def count_indicators_above_threshold(self) -> int:
+        count = 0
+        for i in range(MAX_INDICATORS):
+            if self._indicator_threshold[i] > 0 and self._latest_indicator_value[i] >= self._indicator_threshold[i]:
+                count += 1
+        return count
+
+    def breached_indicators(self) -> List[int]:
+        out = []
+        for i in range(MAX_INDICATORS):
+            if self._indicator_threshold[i] > 0 and self._latest_indicator_value[i] >= self._indicator_threshold[i]:
+                out.append(i)
+        return out
+
+    def get_drawdown_series(self, n: int) -> List[int]:
+        total = len(self._snapshot_ids)
+        if total == 0:
+            return []
+        n = min(n, total)
+        return [
+            self._snapshots[self._snapshot_ids[total - 1 - i]].drawdown_bps
+            for i in range(n)
+        ]
+
+    def get_signal_value_series(self, n: int) -> List[int]:
+        total = len(self._signal_ids)
+        if total == 0:
+            return []
+        n = min(n, total)
+        return [
+            self._signals[self._signal_ids[total - 1 - i]].value
+            for i in range(n)
+        ]
+
+
+# -----------------------------------------------------------------------------
+# CLI / RUNNER
+# -----------------------------------------------------------------------------
+
+
+def main() -> None:
+    guardian = "0x3c5e7a9b1d4f6a8c0e2a4b6c8d0e2f4a6b8c0d2e"
+    reporter = "0x6f2b4d8a0c2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a"
+    treasury = "0x9a1c3e5b7d9f1a3b5c7d9e1f3a5b7c9d1e3f5a7b"
+    engine = TimeToExitEngine(guardian, reporter, treasury)
+    engine.set_drawdown_threshold_bps(1500, guardian)
+    sid = engine.record_drawdown(1200, 10000, 8800, reporter)
+    print("Snapshot id:", sid)
+    sig_id = engine.raise_exit_signal(1, 1800, 1500, b"bear_volume", reporter)
+    print("Signal id:", sig_id)
+    aid = engine.post_exit_advisory(3, reporter)
+    print("Advisory id:", aid)
+    payload = engine.get_dashboard_payload()
+    print("Dashboard:", payload)
+    print("Should exit:", engine.should_exit())
+    print("Exit readiness bps:", engine.exit_readiness_bps())
+    action, confidence = engine.recommended_action()
+    print("Recommended action:", action, "confidence:", confidence)
+
+
+# -----------------------------------------------------------------------------
+# CONFIG LOADER
+# -----------------------------------------------------------------------------
+
+
+class TimeToExitConfig:
+    DEFAULT_THRESHOLD_BPS = 1500
