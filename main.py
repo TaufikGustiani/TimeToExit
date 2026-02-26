@@ -202,3 +202,54 @@ class TimeToExitEngine:
 
     def _require_not_halted(self) -> None:
         if self._halted:
+            raise TTE_Halted()
+
+    def _require_guardian(self, caller: str) -> None:
+        if caller != self._guardian:
+            raise TTE_NotGuardian()
+
+    def _require_reporter(self, caller: str) -> None:
+        if caller != self._reporter:
+            raise TTE_NotReporter()
+
+    @property
+    def guardian(self) -> str:
+        return self._guardian
+
+    @property
+    def reporter(self) -> str:
+        return self._reporter
+
+    @property
+    def treasury(self) -> str:
+        return self._treasury
+
+    @property
+    def halted(self) -> bool:
+        return self._halted
+
+    @property
+    def drawdown_threshold_bps(self) -> int:
+        return self._drawdown_threshold_bps
+
+    def set_halted(self, halted: bool, caller: str) -> None:
+        self._require_guardian(caller)
+        self._halted = halted
+
+    def set_guardian(self, new_guardian: str, caller: str) -> None:
+        if caller != self._guardian:
+            raise TTE_NotGuardian()
+        if not new_guardian:
+            raise TTE_ZeroAddress()
+        self._guardian = new_guardian
+
+    def set_reporter(self, new_reporter: str, caller: str) -> None:
+        if caller != self._guardian:
+            raise TTE_NotGuardian()
+        if not new_reporter:
+            raise TTE_ZeroAddress()
+        self._reporter = new_reporter
+
+    def set_drawdown_threshold_bps(self, new_bps: int, caller: str) -> None:
+        self._require_guardian(caller)
+        if new_bps > MAX_DRAWDOWN_BPS:
