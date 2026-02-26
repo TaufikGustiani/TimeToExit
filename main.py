@@ -655,3 +655,76 @@ def main() -> None:
 
 class TimeToExitConfig:
     DEFAULT_THRESHOLD_BPS = 1500
+    DEFAULT_GUARDIAN = "0x3c5e7a9b1d4f6a8c0e2a4b6c8d0e2f4a6b8c0d2e"
+    DEFAULT_REPORTER = "0x6f2b4d8a0c2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a"
+    DEFAULT_TREASURY = "0x9a1c3e5b7d9f1a3b5c7d9e1f3a5b7c9d1e3f5a7b"
+    RATE_LIMIT_PER_MINUTE = 60
+    LOG_RETENTION_SNAPSHOTS = 50000
+
+
+# -----------------------------------------------------------------------------
+# EVENT LOG (in-memory)
+# -----------------------------------------------------------------------------
+
+
+class TimeToExitEventLog:
+    def __init__(self, max_events: int = 10000):
+        self._events: List[Tuple[str, Dict[str, Any], float]] = []
+        self._max = max_events
+        self._lock = threading.Lock()
+
+    def emit(self, kind: str, payload: Dict[str, Any]) -> None:
+        with self._lock:
+            self._events.append((kind, payload, time.time()))
+            while len(self._events) > self._max:
+                self._events.pop(0)
+
+    def recent(self, n: int) -> List[Tuple[str, Dict[str, Any], float]]:
+        with self._lock:
+            if n >= len(self._events):
+                return list(self._events)
+            return list(self._events[-n:])
+
+
+# -----------------------------------------------------------------------------
+# VALIDATION HELPERS
+# -----------------------------------------------------------------------------
+
+
+def validate_address(addr: str) -> bool:
+    if not addr or not isinstance(addr, str):
+        return False
+    addr = addr.strip().lower()
+    if not addr.startswith("0x") or len(addr) != 42:
+        return False
+    return all(c in "0123456789abcdef" for c in addr[2:])
+
+
+def validate_drawdown_bps(bps: int) -> bool:
+    return 0 <= bps <= MAX_DRAWDOWN_BPS
+
+
+def validate_severity(sev: int) -> bool:
+    return 0 <= sev <= MAX_SEVERITY
+
+
+def validate_indicator_id(iid: int) -> bool:
+    return 0 <= iid < MAX_INDICATORS
+
+
+# -----------------------------------------------------------------------------
+# SERIALIZATION HELPERS
+# -----------------------------------------------------------------------------
+
+
+def snapshot_to_dict(s: DrawdownSnapshot) -> Dict[str, Any]:
+    return {
+        "snapshot_id": s.snapshot_id,
+        "reporter": s.reporter,
+        "drawdown_bps": s.drawdown_bps,
+        "peak_value": s.peak_value,
+        "current_value": s.current_value,
+        "at_block": s.at_block,
+        "at_time": s.at_time,
+    }
+
