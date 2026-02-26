@@ -801,3 +801,76 @@ class TimeToExitAggregator:
 class TimeToExitRateLimiter:
     def __init__(self, max_per_minute: int = 60) -> None:
         self._max = max_per_minute
+        self._times: Dict[str, deque] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, key: str) -> bool:
+        now = time.time()
+        with self._lock:
+            if key not in self._times:
+                self._times[key] = deque(maxlen=self._max * 2)
+            q = self._times[key]
+            while q and now - q[0] > 60:
+                q.popleft()
+            if len(q) >= self._max:
+                return False
+            q.append(now)
+        return True
+
+
+# -----------------------------------------------------------------------------
+# EXIT SCORE CALCULATOR (standalone)
+# -----------------------------------------------------------------------------
+
+
+def compute_exit_score_bps(
+    drawdown_bps: int,
+    threshold_bps: int,
+    advisory_severity_sum: int = 0,
+) -> int:
+    if threshold_bps == 0:
+        return 0
+    score = (drawdown_bps * BPS_DENOM) // threshold_bps
+    if advisory_severity_sum > 0:
+        score = min(BPS_DENOM, score + advisory_severity_sum * 100)
+    return min(score, BPS_DENOM)
+
+
+def compute_drawdown_bps(peak_value: int, current_value: int) -> int:
+    if peak_value <= 0:
+        return 0
+    drop = peak_value - current_value
+    if drop <= 0:
+        return 0
+    return min(MAX_DRAWDOWN_BPS, (drop * BPS_DENOM) // peak_value)
+
+
+# -----------------------------------------------------------------------------
+# EXTENDED ENGINE METHODS (more views)
+# -----------------------------------------------------------------------------
+
+
+def get_median_drawdown_bps(engine: TimeToExitEngine, last_n: int) -> int:
+    n = engine.snapshot_count()
+    if n == 0 or last_n == 0:
+        return 0
+    last_n = min(last_n, n)
+    bps_list = engine.get_drawdown_series(last_n)
+    bps_list.sort()
+    if last_n % 2 == 0:
+        return (bps_list[last_n // 2 - 1] + bps_list[last_n // 2]) // 2
+    return bps_list[last_n // 2]
+
+
+def get_min_drawdown_bps(engine: TimeToExitEngine, last_n: int) -> int:
+    n = engine.snapshot_count()
+    if n == 0:
+        return 0
+    last_n = min(last_n, n)
+    series = engine.get_drawdown_series(last_n)
+    return min(series) if series else 0
+
+
+def exit_pressure_score(engine: TimeToExitEngine) -> int:
+    if engine.snapshot_count() == 0:
+        return 0
