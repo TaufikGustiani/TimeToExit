@@ -436,3 +436,76 @@ class TimeToExitEngine:
             for i in range(last_n)
         )
 
+    def exit_readiness_bps(self) -> int:
+        if not self._snapshot_ids or self._drawdown_threshold_bps == 0:
+            return 0
+        latest_bps = self._snapshots[self._snapshot_ids[-1]].drawdown_bps
+        bps = (latest_bps * BPS_DENOM) // self._drawdown_threshold_bps
+        return min(bps, BPS_DENOM)
+
+    def should_exit(self) -> bool:
+        if not self._snapshot_ids:
+            return False
+        latest_bps = self._snapshots[self._snapshot_ids[-1]].drawdown_bps
+        return latest_bps >= self._drawdown_threshold_bps
+
+    def recommended_action(self) -> Tuple[int, int]:
+        if not self._snapshot_ids:
+            return (ExitAction.HOLD, 0)
+        latest_bps = self._snapshots[self._snapshot_ids[-1]].drawdown_bps
+        if latest_bps >= self._drawdown_threshold_bps:
+            action = ExitAction.EXIT
+            confidence = min(
+                BPS_DENOM,
+                (latest_bps * BPS_DENOM) // self._drawdown_threshold_bps,
+            )
+        else:
+            action = ExitAction.REDUCE
+            confidence = (latest_bps * BPS_DENOM) // self._drawdown_threshold_bps
+        return (int(action), confidence)
+
+    def get_drawdown_stats(self) -> Dict[str, Any]:
+        total_snapshots = len(self._snapshot_ids)
+        total_signals = len(self._signal_ids)
+        total_advisories = len(self._advisory_ids)
+        latest_bps = 0
+        if total_snapshots > 0:
+            latest_bps = self._snapshots[self._snapshot_ids[-1]].drawdown_bps
+        return {
+            "total_snapshots": total_snapshots,
+            "total_signals": total_signals,
+            "total_advisories": total_advisories,
+            "current_threshold_bps": self._drawdown_threshold_bps,
+            "latest_drawdown_bps": latest_bps,
+        }
+
+    def get_indicator_snapshot(self) -> List[int]:
+        return [self._latest_indicator_value[i] for i in range(MAX_INDICATORS)]
+
+    def get_indicator_threshold(self, indicator_id: int) -> int:
+        if 0 <= indicator_id < MAX_INDICATORS:
+            return self._indicator_threshold[indicator_id]
+        return 0
+
+    def get_dashboard_payload(self) -> Dict[str, Any]:
+        snap_count = len(self._snapshot_ids)
+        sig_count = len(self._signal_ids)
+        adv_count = len(self._advisory_ids)
+        thresh_bps = self._drawdown_threshold_bps
+        latest_bps = 0
+        exit_flag = False
+        avg_bps_10 = 0
+        max_bps_10 = 0
+        if snap_count > 0:
+            latest_bps = self._snapshots[self._snapshot_ids[-1]].drawdown_bps
+            exit_flag = latest_bps >= thresh_bps
+            n10 = min(10, snap_count)
+            avg_bps_10 = self.average_drawdown_bps(n10)
+            max_bps_10 = self.max_drawdown_bps(n10)
+        exit_readiness = self.exit_readiness_bps()
+        return {
+            "snap_count": snap_count,
+            "sig_count": sig_count,
+            "adv_count": adv_count,
+            "latest_bps": latest_bps,
+            "thresh_bps": thresh_bps,
