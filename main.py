@@ -728,3 +728,76 @@ def snapshot_to_dict(s: DrawdownSnapshot) -> Dict[str, Any]:
         "at_time": s.at_time,
     }
 
+
+def signal_to_dict(s: ExitSignal) -> Dict[str, Any]:
+    return {
+        "signal_id": s.signal_id,
+        "indicator_id": s.indicator_id,
+        "value": s.value,
+        "threshold": s.threshold,
+        "label_hash_hex": s.label_hash.hex() if isinstance(s.label_hash, bytes) else str(s.label_hash),
+        "at_block": s.at_block,
+        "at_time": s.at_time,
+    }
+
+
+def advisory_to_dict(a: ExitAdvisory) -> Dict[str, Any]:
+    return {
+        "advisory_id": a.advisory_id,
+        "author": a.author,
+        "severity": a.severity,
+        "at_block": a.at_block,
+        "at_time": a.at_time,
+    }
+
+
+# -----------------------------------------------------------------------------
+# AGGREGATOR (combines multiple engines for multi-asset view)
+# -----------------------------------------------------------------------------
+
+
+class TimeToExitAggregator:
+    def __init__(self) -> None:
+        self._engines: Dict[str, TimeToExitEngine] = {}
+        self._lock = threading.RLock()
+
+    def register(self, label: str, engine: TimeToExitEngine) -> None:
+        with self._lock:
+            self._engines[label] = engine
+
+    def unregister(self, label: str) -> None:
+        with self._lock:
+            self._engines.pop(label, None)
+
+    def get_engine(self, label: str) -> Optional[TimeToExitEngine]:
+        return self._engines.get(label)
+
+    def any_should_exit(self) -> bool:
+        with self._lock:
+            return any(e.should_exit() for e in self._engines.values())
+
+    def worst_exit_readiness_bps(self) -> int:
+        with self._lock:
+            if not self._engines:
+                return 0
+            return max(e.exit_readiness_bps() for e in self._engines.values())
+
+    def aggregate_dashboard(self) -> Dict[str, Any]:
+        with self._lock:
+            out: Dict[str, Any] = {"engines": {}, "any_exit": False, "max_readiness_bps": 0}
+            for label, engine in self._engines.items():
+                out["engines"][label] = engine.get_dashboard_payload()
+                if engine.should_exit():
+                    out["any_exit"] = True
+                out["max_readiness_bps"] = max(out["max_readiness_bps"], engine.exit_readiness_bps())
+            return out
+
+
+# -----------------------------------------------------------------------------
+# RATE LIMITER
+# -----------------------------------------------------------------------------
+
+
+class TimeToExitRateLimiter:
+    def __init__(self, max_per_minute: int = 60) -> None:
+        self._max = max_per_minute
