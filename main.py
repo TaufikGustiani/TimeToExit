@@ -1093,3 +1093,61 @@ def health_check(engine: TimeToExitEngine) -> Dict[str, Any]:
         "signal_count": engine.signal_count(),
         "advisory_count": engine.advisory_count(),
         "threshold_bps": engine.drawdown_threshold_bps,
+        "ok": not engine.halted,
+    }
+
+
+def get_last_n_snapshot_ids(engine: TimeToExitEngine, n: int) -> List[int]:
+    total = engine.snapshot_count()
+    if total == 0:
+        return []
+    n = min(n, total)
+    return engine.get_snapshot_ids_paginated(total - n, n)
+
+
+def get_last_n_signal_ids(engine: TimeToExitEngine, n: int) -> List[int]:
+    total = engine.signal_count()
+    if total == 0:
+        return []
+    n = min(n, total)
+    return engine.get_signal_ids_paginated(total - n, n)
+
+
+def format_bps(bps: int) -> str:
+    return f"{bps / 100:.2f}%" if bps <= BPS_DENOM else "100.00%"
+
+
+def format_action(action: int) -> str:
+    if action == ExitAction.HOLD:
+        return "HOLD"
+    if action == ExitAction.REDUCE:
+        return "REDUCE"
+    if action == ExitAction.EXIT:
+        return "EXIT"
+    return "UNKNOWN"
+
+
+def export_engine_state_summary(engine: TimeToExitEngine) -> Dict[str, Any]:
+    """Produce a JSON-serializable summary of engine state for logging or backup."""
+    return {
+        "guardian": engine.guardian,
+        "reporter": engine.reporter,
+        "treasury": engine.treasury,
+        "halted": engine.halted,
+        "drawdown_threshold_bps": engine.drawdown_threshold_bps,
+        "snapshot_count": engine.snapshot_count(),
+        "signal_count": engine.signal_count(),
+        "advisory_count": engine.advisory_count(),
+        "indicators": engine.get_indicator_snapshot(),
+        "version": version(),
+    }
+
+
+# -----------------------------------------------------------------------------
+# MAIN ENTRY
+# -----------------------------------------------------------------------------
+
+
+if __name__ == "__main__":
+    main()
+
