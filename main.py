@@ -363,3 +363,76 @@ class TimeToExitEngine:
             raise TTE_SnapshotNotFound()
         return self._snapshots[snapshot_id]
 
+    def get_signal(self, signal_id: int) -> ExitSignal:
+        if signal_id not in self._signals:
+            raise TTE_SignalNotFound()
+        return self._signals[signal_id]
+
+    def get_advisory(self, advisory_id: int) -> ExitAdvisory:
+        if advisory_id not in self._advisories:
+            raise TTE_AdvisoryNotFound()
+        return self._advisories[advisory_id]
+
+    def snapshot_count(self) -> int:
+        return len(self._snapshot_ids)
+
+    def signal_count(self) -> int:
+        return len(self._signal_ids)
+
+    def advisory_count(self) -> int:
+        return len(self._advisory_ids)
+
+    def is_exit_signal_active(self) -> bool:
+        if not self._signal_ids:
+            return False
+        last_id = self._signal_ids[-1]
+        s = self._signals[last_id]
+        return s.value >= self._drawdown_threshold_bps
+
+    def recent_signals(self, limit: int) -> List[Tuple[int, int, int]]:
+        n = len(self._signal_ids)
+        limit = min(limit, n)
+        if limit == 0:
+            return []
+        out = []
+        for i in range(limit):
+            idx = n - 1 - i
+            sid = self._signal_ids[idx]
+            s = self._signals[sid]
+            out.append((sid, s.value, s.at_block))
+        return out
+
+    def recent_drawdowns(self, limit: int) -> List[Tuple[int, int, int]]:
+        n = len(self._snapshot_ids)
+        limit = min(limit, n)
+        if limit == 0:
+            return []
+        out = []
+        for i in range(limit):
+            idx = n - 1 - i
+            sid = self._snapshot_ids[idx]
+            sn = self._snapshots[sid]
+            out.append((sid, sn.drawdown_bps, sn.at_block))
+        return out
+
+    def average_drawdown_bps(self, last_n: int) -> int:
+        n = len(self._snapshot_ids)
+        if n == 0 or last_n == 0:
+            return 0
+        last_n = min(last_n, n)
+        total = sum(
+            self._snapshots[self._snapshot_ids[n - 1 - i]].drawdown_bps
+            for i in range(last_n)
+        )
+        return total // last_n
+
+    def max_drawdown_bps(self, last_n: int) -> int:
+        n = len(self._snapshot_ids)
+        if n == 0:
+            return 0
+        last_n = min(last_n, n)
+        return max(
+            self._snapshots[self._snapshot_ids[n - 1 - i]].drawdown_bps
+            for i in range(last_n)
+        )
+
