@@ -151,3 +151,54 @@ class ExitSignal:
     signal_id: int
     indicator_id: int
     value: int
+    threshold: int
+    label_hash: bytes
+    at_block: int
+    at_time: float = field(default_factory=time.time)
+
+
+@dataclass
+class ExitAdvisory:
+    advisory_id: int
+    author: str
+    severity: int
+    at_block: int
+    at_time: float = field(default_factory=time.time)
+
+
+# -----------------------------------------------------------------------------
+# CORE ENGINE
+# -----------------------------------------------------------------------------
+
+
+class TimeToExitEngine:
+    def __init__(
+        self,
+        guardian_address: str = "0x3c5e7a9b1d4f6a8c0e2a4b6c8d0e2f4a6b8c0d2e",
+        reporter_address: str = "0x6f2b4d8a0c2e4f6a8b0c2d4e6f8a0b2c4d6e8f0a",
+        treasury_address: str = "0x9a1c3e5b7d9f1a3b5c7d9e1f3a5b7c9d1e3f5a7b",
+    ):
+        if not guardian_address or not reporter_address or not treasury_address:
+            raise TTE_ZeroAddress()
+        self._guardian = guardian_address
+        self._reporter = reporter_address
+        self._treasury = treasury_address
+        self._halted = False
+        self._drawdown_threshold_bps = 1500
+        self._snapshot_counter = 0
+        self._signal_counter = 0
+        self._advisory_counter = 0
+        self._treasury_balance = 0
+        self._reporter_fee_wei = 0
+        self._snapshots: Dict[int, DrawdownSnapshot] = {}
+        self._signals: Dict[int, ExitSignal] = {}
+        self._advisories: Dict[int, ExitAdvisory] = {}
+        self._snapshot_ids: List[int] = []
+        self._signal_ids: List[int] = []
+        self._advisory_ids: List[int] = []
+        self._latest_indicator_value: Dict[int, int] = {i: 0 for i in range(MAX_INDICATORS)}
+        self._indicator_threshold: Dict[int, int] = {i: 0 for i in range(MAX_INDICATORS)}
+        self._lock = threading.RLock()
+
+    def _require_not_halted(self) -> None:
+        if self._halted:
