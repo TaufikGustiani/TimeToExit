@@ -509,3 +509,76 @@ class TimeToExitEngine:
             "adv_count": adv_count,
             "latest_bps": latest_bps,
             "thresh_bps": thresh_bps,
+            "exit_flag": exit_flag,
+            "avg_bps_10": avg_bps_10,
+            "max_bps_10": max_bps_10,
+            "exit_readiness": exit_readiness,
+        }
+
+    def record_drawdown_batch(
+        self,
+        drawdown_bps_list: List[int],
+        peak_values: List[int],
+        current_values: List[int],
+        caller: str,
+        at_block: int = 0,
+    ) -> List[int]:
+        self._require_reporter(caller)
+        self._require_not_halted()
+        n = len(drawdown_bps_list)
+        if n == 0 or n > BATCH_SIZE or len(peak_values) != n or len(current_values) != n:
+            raise TTE_ArrayLengthMismatch()
+        if len(self._snapshot_ids) + n > MAX_SNAPSHOTS:
+            raise TTE_MaxSnapshotsReached()
+        at_block = at_block or int(time.time() // 12)
+        snapshot_ids = []
+        with self._lock:
+            for i in range(n):
+                if drawdown_bps_list[i] > MAX_DRAWDOWN_BPS:
+                    raise TTE_DrawdownOutOfRange()
+                self._snapshot_counter += 1
+                sid = self._snapshot_counter
+                self._snapshots[sid] = DrawdownSnapshot(
+                    snapshot_id=sid,
+                    reporter=caller,
+                    drawdown_bps=drawdown_bps_list[i],
+                    peak_value=peak_values[i],
+                    current_value=current_values[i],
+                    at_block=at_block,
+                )
+                self._snapshot_ids.append(sid)
+                snapshot_ids.append(sid)
+        return snapshot_ids
+
+    def get_snapshot_ids_paginated(self, offset: int, limit: int) -> List[int]:
+        total = len(self._snapshot_ids)
+        if offset >= total:
+            return []
+        limit = min(limit, total - offset)
+        return [self._snapshot_ids[offset + i] for i in range(limit)]
+
+    def get_signal_ids_paginated(self, offset: int, limit: int) -> List[int]:
+        total = len(self._signal_ids)
+        if offset >= total:
+            return []
+        limit = min(limit, total - offset)
+        return [self._signal_ids[offset + i] for i in range(limit)]
+
+    def get_advisory_ids_paginated(self, offset: int, limit: int) -> List[int]:
+        total = len(self._advisory_ids)
+        if offset >= total:
+            return []
+        limit = min(limit, total - offset)
+        return [self._advisory_ids[offset + i] for i in range(limit)]
+
+    def drawdown_trend(self, last_n: int) -> int:
+        n = len(self._snapshot_ids)
+        if n < 2 or last_n < 2:
+            return 0
+        last_n = min(last_n, n)
+        first_bps = self._snapshots[self._snapshot_ids[n - last_n]].drawdown_bps
+        last_bps = self._snapshots[self._snapshot_ids[-1]].drawdown_bps
+        return last_bps - first_bps
+
+    def severity_distribution(self) -> List[int]:
+        counts = [0] * (MAX_SEVERITY + 1)
