@@ -100,3 +100,54 @@ class TTE_ArrayLengthMismatch(TimeToExitError):
         super().__init__("TTE_ArrayLengthMismatch", "Array length mismatch")
 
 
+class TTE_BatchTooLarge(TimeToExitError):
+    def __init__(self):
+        super().__init__("TTE_BatchTooLarge", "Batch too large")
+
+
+class TTE_InvalidIndicatorId(TimeToExitError):
+    def __init__(self):
+        super().__init__("TTE_InvalidIndicatorId", "Invalid indicator id")
+
+
+class TTE_SignalNotFound(TimeToExitError):
+    def __init__(self):
+        super().__init__("TTE_SignalNotFound", "Signal not found")
+
+
+class TTE_AdvisoryNotFound(TimeToExitError):
+    def __init__(self):
+        super().__init__("TTE_AdvisoryNotFound", "Advisory not found")
+
+# -----------------------------------------------------------------------------
+# ENUMS
+# -----------------------------------------------------------------------------
+
+
+class ExitAction(IntEnum):
+    HOLD = 0
+    REDUCE = 1
+    EXIT = 2
+
+
+# -----------------------------------------------------------------------------
+# DATA STRUCTURES
+# -----------------------------------------------------------------------------
+
+
+@dataclass
+class DrawdownSnapshot:
+    snapshot_id: int
+    reporter: str
+    drawdown_bps: int
+    peak_value: int
+    current_value: int
+    at_block: int
+    at_time: float = field(default_factory=time.time)
+
+
+@dataclass
+class ExitSignal:
+    signal_id: int
+    indicator_id: int
+    value: int
