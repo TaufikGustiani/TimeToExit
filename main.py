@@ -217,3 +217,76 @@ class TimeToExitEngine:
         return self._guardian
 
     @property
+    def reporter(self) -> str:
+        return self._reporter
+
+    @property
+    def treasury(self) -> str:
+        return self._treasury
+
+    @property
+    def halted(self) -> bool:
+        return self._halted
+
+    @property
+    def drawdown_threshold_bps(self) -> int:
+        return self._drawdown_threshold_bps
+
+    def set_halted(self, halted: bool, caller: str) -> None:
+        self._require_guardian(caller)
+        self._halted = halted
+
+    def set_guardian(self, new_guardian: str, caller: str) -> None:
+        if caller != self._guardian:
+            raise TTE_NotGuardian()
+        if not new_guardian:
+            raise TTE_ZeroAddress()
+        self._guardian = new_guardian
+
+    def set_reporter(self, new_reporter: str, caller: str) -> None:
+        if caller != self._guardian:
+            raise TTE_NotGuardian()
+        if not new_reporter:
+            raise TTE_ZeroAddress()
+        self._reporter = new_reporter
+
+    def set_drawdown_threshold_bps(self, new_bps: int, caller: str) -> None:
+        self._require_guardian(caller)
+        if new_bps > MAX_DRAWDOWN_BPS:
+            raise TTE_ThresholdInvalid()
+        self._drawdown_threshold_bps = new_bps
+
+    def update_indicator(self, indicator_id: int, value: int, caller: str) -> None:
+        self._require_reporter(caller)
+        self._require_not_halted()
+        if indicator_id < 0 or indicator_id >= MAX_INDICATORS:
+            raise TTE_InvalidIndicatorId()
+        self._latest_indicator_value[indicator_id] = value
+
+    def set_indicator_threshold(self, indicator_id: int, threshold: int, caller: str) -> None:
+        self._require_guardian(caller)
+        if indicator_id < 0 or indicator_id >= MAX_INDICATORS:
+            raise TTE_InvalidIndicatorId()
+        self._indicator_threshold[indicator_id] = threshold
+
+    def record_drawdown(
+        self,
+        drawdown_bps: int,
+        peak_value: int,
+        current_value: int,
+        caller: str,
+        at_block: int = 0,
+    ) -> int:
+        self._require_reporter(caller)
+        self._require_not_halted()
+        if drawdown_bps > MAX_DRAWDOWN_BPS:
+            raise TTE_DrawdownOutOfRange()
+        if len(self._snapshot_ids) >= MAX_SNAPSHOTS:
+            raise TTE_MaxSnapshotsReached()
+        at_block = at_block or int(time.time() // 12)
+        with self._lock:
+            self._snapshot_counter += 1
+            sid = self._snapshot_counter
+            self._snapshots[sid] = DrawdownSnapshot(
+                snapshot_id=sid,
+                reporter=caller,
