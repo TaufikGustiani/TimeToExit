@@ -290,3 +290,76 @@ class TimeToExitEngine:
             self._snapshots[sid] = DrawdownSnapshot(
                 snapshot_id=sid,
                 reporter=caller,
+                drawdown_bps=drawdown_bps,
+                peak_value=peak_value,
+                current_value=current_value,
+                at_block=at_block,
+            )
+            self._snapshot_ids.append(sid)
+            if drawdown_bps >= self._drawdown_threshold_bps and len(self._signal_ids) < MAX_SIGNALS:
+                self._signal_counter += 1
+                sig_id = self._signal_counter
+                self._signals[sig_id] = ExitSignal(
+                    signal_id=sig_id,
+                    indicator_id=0,
+                    value=drawdown_bps,
+                    threshold=self._drawdown_threshold_bps,
+                    label_hash=hashlib.sha256(b"TimeToExit.drawdown").digest()[:32],
+                    at_block=at_block,
+                )
+                self._signal_ids.append(sig_id)
+        return sid
+
+    def raise_exit_signal(
+        self,
+        indicator_id: int,
+        value: int,
+        threshold: int,
+        label_hash: bytes,
+        caller: str,
+        at_block: int = 0,
+    ) -> int:
+        self._require_reporter(caller)
+        self._require_not_halted()
+        if indicator_id < 0 or indicator_id >= MAX_INDICATORS:
+            raise TTE_InvalidIndicatorId()
+        if len(self._signal_ids) >= MAX_SIGNALS:
+            raise TimeToExitError("TTE_MaxSignalsReached", "Max signals reached")
+        at_block = at_block or int(time.time() // 12)
+        with self._lock:
+            self._signal_counter += 1
+            sig_id = self._signal_counter
+            self._signals[sig_id] = ExitSignal(
+                signal_id=sig_id,
+                indicator_id=indicator_id,
+                value=value,
+                threshold=threshold,
+                label_hash=label_hash[:32] if len(label_hash) >= 32 else label_hash.ljust(32, b"\0"),
+                at_block=at_block,
+            )
+            self._signal_ids.append(sig_id)
+        return sig_id
+
+    def post_exit_advisory(self, severity: int, caller: str, at_block: int = 0) -> int:
+        self._require_reporter(caller)
+        self._require_not_halted()
+        if severity < 0 or severity > MAX_SEVERITY:
+            raise TTE_SeverityOutOfRange()
+        at_block = at_block or int(time.time() // 12)
+        with self._lock:
+            self._advisory_counter += 1
+            aid = self._advisory_counter
+            self._advisories[aid] = ExitAdvisory(
+                advisory_id=aid,
+                author=caller,
+                severity=severity,
+                at_block=at_block,
+            )
+            self._advisory_ids.append(aid)
+        return aid
+
+    def get_snapshot(self, snapshot_id: int) -> DrawdownSnapshot:
+        if snapshot_id not in self._snapshots:
+            raise TTE_SnapshotNotFound()
+        return self._snapshots[snapshot_id]
+
