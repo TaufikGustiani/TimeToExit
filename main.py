@@ -874,3 +874,76 @@ def get_min_drawdown_bps(engine: TimeToExitEngine, last_n: int) -> int:
 def exit_pressure_score(engine: TimeToExitEngine) -> int:
     if engine.snapshot_count() == 0:
         return 0
+    payload = engine.get_dashboard_payload()
+    latest_bps = payload["latest_bps"]
+    sev_dist = engine.severity_distribution()
+    high_sev = sum(sev_dist[i] for i in range(4, len(sev_dist)) if i < len(sev_dist))
+    score = latest_bps
+    if high_sev > 0 and score < BPS_DENOM:
+        score += high_sev * 500
+    return min(score, BPS_DENOM)
+
+
+# -----------------------------------------------------------------------------
+# VERSION AND CONSTANTS EXPORT
+# -----------------------------------------------------------------------------
+
+
+def version() -> str:
+    return "TimeToExit.1.0.0"
+
+
+def constants_for_frontend() -> Dict[str, int]:
+    return {
+        "bps_denom": BPS_DENOM,
+        "max_indicators": MAX_INDICATORS,
+        "max_severity": MAX_SEVERITY,
+        "max_drawdown_bps": MAX_DRAWDOWN_BPS,
+        "max_snapshots": MAX_SNAPSHOTS,
+        "max_signals": MAX_SIGNALS,
+        "batch_size": BATCH_SIZE,
+    }
+
+
+# -----------------------------------------------------------------------------
+# RUN EXTENDED DEMO
+# -----------------------------------------------------------------------------
+
+
+def run_extended_demo() -> None:
+    guardian = "0x4a2b8c0d6e1f3a5b7c9d1e3f5a7b9c0d2e4f6a8b"
+    reporter = "0x5b3c9d1e4f6a8b0c2d4e6f8a0b2c4d6e8f0a2b4c"
+    treasury = "0x6c4d0e2f5a7b9c1d3e5f7a9b1c3d5e7f9a1b3c5d"
+    engine = TimeToExitEngine(guardian, reporter, treasury)
+    engine.set_drawdown_threshold_bps(1200, guardian)
+    for i in range(5):
+        engine.record_drawdown(800 + i * 100, 10000, 10000 - (800 + i * 100), reporter)
+    engine.raise_exit_signal(2, 1500, 1200, b"volume_drop", reporter)
+    engine.post_exit_advisory(4, reporter)
+    agg = TimeToExitAggregator()
+    agg.register("primary", engine)
+    print("Aggregate any_exit:", agg.any_should_exit())
+    print("Worst readiness:", agg.worst_exit_readiness_bps())
+    print("Median drawdown (5):", get_median_drawdown_bps(engine, 5))
+    print("Exit pressure score:", exit_pressure_score(engine))
+    print("Version:", version())
+    print("Constants:", constants_for_frontend())
+
+
+# -----------------------------------------------------------------------------
+# CHART DATA BUILDER (for dashboards)
+# -----------------------------------------------------------------------------
+
+
+class TimeToExitChartBuilder:
+    def __init__(self, engine: TimeToExitEngine) -> None:
+        self._engine = engine
+
+    def drawdown_series(self, n: int) -> List[Dict[str, Any]]:
+        bps_list = self._engine.get_drawdown_series(n)
+        ids = self._engine.get_snapshot_ids_paginated(
+            max(0, self._engine.snapshot_count() - n), n
+        )
+        if len(ids) > len(bps_list):
+            ids = ids[-len(bps_list):]
+        return [{"id": ids[i], "bps": bps_list[i], "index": i} for i in range(len(bps_list))]
