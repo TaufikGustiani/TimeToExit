@@ -947,3 +947,76 @@ class TimeToExitChartBuilder:
         if len(ids) > len(bps_list):
             ids = ids[-len(bps_list):]
         return [{"id": ids[i], "bps": bps_list[i], "index": i} for i in range(len(bps_list))]
+
+    def signal_series(self, n: int) -> List[Dict[str, Any]]:
+        val_list = self._engine.get_signal_value_series(n)
+        return [{"index": i, "value": val_list[i]} for i in range(len(val_list))]
+
+    def exit_readiness_over_time(self, window: int) -> List[Dict[str, Any]]:
+        snap_count = self._engine.snapshot_count()
+        if snap_count == 0:
+            return []
+        window = min(window, snap_count)
+        thresh = self._engine.drawdown_threshold_bps
+        if thresh == 0:
+            return []
+        out = []
+        for i in range(window):
+            idx = snap_count - 1 - i
+            sid = self._engine.get_snapshot_ids_paginated(idx, 1)[0]
+            sn = self._engine.get_snapshot(sid)
+            bps = (sn.drawdown_bps * BPS_DENOM) // thresh
+            bps = min(bps, BPS_DENOM)
+            out.append({"index": i, "snapshot_id": sid, "readiness_bps": bps})
+        return out
+
+
+# -----------------------------------------------------------------------------
+# EXPORT / REPORT HELPERS
+# -----------------------------------------------------------------------------
+
+
+def build_report(engine: TimeToExitEngine, last_n_snapshots: int = 50) -> Dict[str, Any]:
+    stats = engine.get_drawdown_stats()
+    payload = engine.get_dashboard_payload()
+    action, confidence = engine.recommended_action()
+    severity_dist = engine.severity_distribution()
+    breached = engine.breached_indicators()
+    return {
+        "stats": stats,
+        "dashboard": payload,
+        "recommended_action": action,
+        "confidence_bps": confidence,
+        "severity_distribution": severity_dist,
+        "breached_indicators": breached,
+        "version": version(),
+        "constants": constants_for_frontend(),
+    }
+
+
+def build_minimal_report(engine: TimeToExitEngine) -> Dict[str, Any]:
+    return {
+        "should_exit": engine.should_exit(),
+        "exit_readiness_bps": engine.exit_readiness_bps(),
+        "snapshot_count": engine.snapshot_count(),
+        "signal_count": engine.signal_count(),
+        "advisory_count": engine.advisory_count(),
+    }
+
+
+# -----------------------------------------------------------------------------
+# INDICATOR THRESHOLD CHECKER
+# -----------------------------------------------------------------------------
+
+
+def check_all_indicators(engine: TimeToExitEngine) -> List[Dict[str, Any]]:
+    out = []
+    for i in range(MAX_INDICATORS):
+        val = engine.get_indicator_snapshot()[i]
+        thresh = engine.get_indicator_threshold(i)
+        out.append({
+            "indicator_id": i,
+            "value": val,
+            "threshold": thresh,
+            "breached": thresh > 0 and val >= thresh,
+        })
