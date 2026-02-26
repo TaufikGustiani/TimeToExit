@@ -1020,3 +1020,76 @@ def check_all_indicators(engine: TimeToExitEngine) -> List[Dict[str, Any]]:
             "threshold": thresh,
             "breached": thresh > 0 and val >= thresh,
         })
+    return out
+
+
+# -----------------------------------------------------------------------------
+# SNAPSHOT COMPARATOR (compare two engines)
+# -----------------------------------------------------------------------------
+
+
+def compare_engines(
+    engine_a: TimeToExitEngine,
+    engine_b: TimeToExitEngine,
+) -> Dict[str, Any]:
+    ra = engine_a.exit_readiness_bps()
+    rb = engine_b.exit_readiness_bps()
+    return {
+        "engine_a_readiness_bps": ra,
+        "engine_b_readiness_bps": rb,
+        "higher_readiness": "a" if ra >= rb else "b",
+        "a_should_exit": engine_a.should_exit(),
+        "b_should_exit": engine_b.should_exit(),
+    }
+
+
+# -----------------------------------------------------------------------------
+# SIMULATOR (generate sample data for testing dashboards)
+# -----------------------------------------------------------------------------
+
+
+def simulate_drawdown_sequence(
+    engine: TimeToExitEngine,
+    reporter: str,
+    num_steps: int = 20,
+    peak: int = 10000,
+    final_drawdown_bps: int = 2500,
+) -> List[int]:
+    """Append a sequence of drawdown snapshots from 0 to final_drawdown_bps."""
+    ids = []
+    for step in range(1, num_steps + 1):
+        bps = (final_drawdown_bps * step) // num_steps
+        current = peak - (peak * bps) // BPS_DENOM
+        sid = engine.record_drawdown(bps, peak, current, reporter)
+        ids.append(sid)
+    return ids
+
+
+def simulate_signals(
+    engine: TimeToExitEngine,
+    reporter: str,
+    count: int = 5,
+    base_value: int = 1200,
+    threshold: int = 1500,
+) -> List[int]:
+    """Raise a few exit signals for testing."""
+    ids = []
+    for i in range(count):
+        val = base_value + i * 100
+        sig_id = engine.raise_exit_signal(1, val, threshold, b"sim_signal", reporter)
+        ids.append(sig_id)
+    return ids
+
+
+# -----------------------------------------------------------------------------
+# HEALTH CHECK
+# -----------------------------------------------------------------------------
+
+
+def health_check(engine: TimeToExitEngine) -> Dict[str, Any]:
+    return {
+        "halted": engine.halted,
+        "snapshot_count": engine.snapshot_count(),
+        "signal_count": engine.signal_count(),
+        "advisory_count": engine.advisory_count(),
+        "threshold_bps": engine.drawdown_threshold_bps,
